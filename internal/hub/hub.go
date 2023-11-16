@@ -6,50 +6,94 @@ import (
 	"net"
 
 	"github.com/labstack/gommon/log"
-	"github.com/nxy7/tcp-assignment/internal/client"
+	"github.com/nxy7/tcp-assignment/internal/command"
 )
 
 type Hub struct {
-	Clients map[string]client.Client
+	Clients map[string]Client
+}
+
+func NewHub() Hub {
+	return Hub{
+		Clients: make(map[string]Client),
+	}
+}
+
+type Client struct {
+	id   string
+	conn net.Conn
 }
 
 func (h *Hub) Serve(port string) error {
-	l, err := net.Listen("tcp", ":"+port)
+	l, err := net.Listen("tcp", port)
 	if err != nil {
 		return err
 	}
 	defer l.Close()
 
-	for l, err := l.Accept(); err == nil; {
-		go ServeRequest(l)
+	for {
+		lconn, err := l.Accept()
+		if err != nil {
+			return err
+		}
+		fmt.Println("Handling new connection")
+		go func() {
+			defer lconn.Close()
+			err = h.ServeRequest(lconn)
+			if err != nil {
+				log.Error(err)
+			}
+		}()
 	}
-
-	return nil
 }
 
-func ServeRequest(l net.Conn) {
+// Handles all communication with one client
+func (h *Hub) ServeRequest(l net.Conn) error {
+	var cmdHandler RequestHandler
+	b := bufio.NewReader(l)
 
-	var data []byte
-	// var buf bytes.Buffer
-	b := bufio.NewScanner(l)
+	r, err := b.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if r != command.JoinHeader() {
+		l.Write([]byte("First message has to be join command\n"))
+		return err
+	}
+	cmdHandler = &JoinHandler{h}
+	err = cmdHandler.HandleRequest(l)
+	if err != nil {
+		fmt.Fprint(l, err)
+		return err
+	}
+	cmdHandler = nil
+
+	fmt.Println("Going into server req loop")
 	for {
-		_, err := l.Read(data)
+		line, err := b.ReadString('\n')
 		if err != nil {
-			log.Error(err)
-			return
+			fmt.Fprint(l, err)
+			fmt.Printf("err: %v\n", err)
+			return err
 		}
 
-		// io.Copy(&buf, l)
-		for b.Scan() {
-			fmt.Println(b.Text())
+		if line == command.ListHeader() {
+			cmdHandler = &ListHandler{h}
+			err = cmdHandler.HandleRequest(l)
+			if err != nil {
+				return err
+			}
+		} else if line == command.WriteHeader() {
+			cmdHandler = &WriteMessageHandler{h}
+			err = cmdHandler.HandleRequest(l)
+			if err != nil {
+				return err
+			}
+		} else {
+			fmt.Println("Unknown command", line)
 		}
 
-		r := "someResp"
-		_, err = l.Write([]byte(r))
-		if err != nil {
-			log.Error(err)
-			return
-		}
+		cmdHandler = nil
 	}
 }
 

@@ -1,17 +1,27 @@
-package main
+package cmd
 
 import (
 	"fmt"
+	"os"
 
-	"github.com/nxy7/tcp-assignment/internal/api"
+	"github.com/nxy7/tcp-assignment/cmd/client"
+	"github.com/nxy7/tcp-assignment/cmd/serve"
+	"github.com/spf13/cobra"
 )
 
-func main() {
-	fmt.Println("This is golang service starter template")
-	fmt.Println("You might want to change module name to something more descriptive")
+var rootCmd = &cobra.Command{
+	// Use:   "tcp",
+	Short: "Custom TCP protocol",
+}
 
-	s := api.MakeDefaultServer()
-	if err := s.Start(":1234"); err != nil {
-		panic(err)
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
+}
+
+func init() {
+	rootCmd.AddCommand(serve.ServeCmd)
+	rootCmd.AddCommand(client.ClientCmd)
 }
